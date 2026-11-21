@@ -81,6 +81,10 @@ What does not survive unless you back it up separately:
 - Existing TWRP on the device (see [Recovery strategy](#step-3-recovery-strategy)).
   If you're coming from a custom ROM you probably already have it.
 
+Commands below are **bash syntax** (`for` loops, `export`, `head`). On Windows,
+run them from Git Bash or WSL. If you use PowerShell/cmd, run each `adb pull` /
+`adb push` line by hand — there are only a dozen.
+
 ### Git Bash users (Windows)
 
 MSYS/Git Bash rewrites `/sdcard/...` into `C:/Program Files/Git/sdcard/...` and
@@ -147,11 +151,24 @@ Create a `flash/` folder. You need four things:
 | PixelOS ROM zip | [pixelos.net/download/alioth](https://pixelos.net/download/alioth) — take the newest build | ~3 GB |
 | Global firmware | `fw_alioth` `OS1.0.2.0.TKHMIXM` from [XiaomiFirmwareUpdater](https://xmfirmwareupdater.com/firmware/alioth/stable/OS1.0.2.0.TKHMIXM/) or its GitHub releases mirror | ~140 MB |
 | Magisk APK | [github.com/topjohnwu/Magisk/releases](https://github.com/topjohnwu/Magisk/releases) | ~10 MB |
-| Boot image | `boot-alioth_*.img` from the PixelOS download page's recovery images, or extracted from the ROM zip's `payload.bin` | **~192 MB** |
+| Boot image | `boot-alioth_*.img` from the PixelOS download page's recovery images (`https://download.pixelos.net/seventeen/alioth/recovery/`), or extracted from the ROM zip's `payload.bin` | **~192 MB** |
+
+> **Firmware is region-specific.** `TKHMIXM` (MIXM) is the **Global** branch —
+> right for a Global-model phone. If your device shipped EEA (`EUXM`) or India
+> (`INXM`) firmware, grab the matching `fw_alioth` for your branch instead, or
+> you can end up with broken modem/band behavior. Check your original ROM's
+> version string before wiping if unsure.
 
 `vendor_boot`/`dtbo` images are only needed if you take the official
 recovery-based route (Step 3). The TWRP route this guide follows doesn't use
 them.
+
+Sanity-check the ROM zip before you wipe (a corrupt 3 GB download is a bad
+surprise mid-flash):
+
+```bash
+unzip -l PixelOS_alioth-*.zip | grep payload.bin   # should list payload.bin
+```
 
 ### Verify the boot image — this is the #1 failure point
 
@@ -216,6 +233,15 @@ Power alone does nothing. This combo is your undo button — remember it.
 fastboot reboot recovery        # or Power+VolUp at boot
 ```
 
+Boots the wrong recovery (or back to the POCO logo)? Your TWRP probably lives
+on the **other** slot — drop back to fastboot and switch:
+
+```bash
+fastboot getvar current-slot
+fastboot --set-active=a         # or b — whichever slot has TWRP
+fastboot reboot recovery
+```
+
 In TWRP:
 
 1. **Wipe → Format Data** → type `yes` → confirm.
@@ -262,9 +288,9 @@ Note which slot the ROM installer targeted (TWRP flashes A/B ROMs to the
    adb install flash/Magisk-v*.apk
    ```
 
-4. In the Magisk app: **Install → Select and Patch a File** → choose
-   `boot-alioth_*.img` (you pushed it in Step 6; also in `Download/` if you
-   put it there). It writes `magisk_patched-*.img` to `Download/`.
+4. In the Magisk app: **Install → Select and Patch a File** → navigate to
+   `Internal storage/flash/` and choose `boot-alioth_*.img` (that's where you
+   pushed it in Step 6). It writes `magisk_patched-*.img` to `Download/`.
 5. Pull it and flash it to the **slot the system is running on**:
 
    ```bash
@@ -306,10 +332,17 @@ and per ROM build.
 
 ```bash
 for d in Documents Download Books Music Movies YMusic \
-         "WhatsApp/Media" backups SwiftBackup Pic Pic14; do
+         backups SwiftBackup Pic Pic14; do
   adb push "backup/$(basename "$d")/" "/sdcard/$d/"
 done
+adb shell mkdir -p "/sdcard/Android/media/com.whatsapp/WhatsApp"
+adb push "backup/Media/" "/sdcard/Android/media/com.whatsapp/WhatsApp/Media/"
 ```
+
+> WhatsApp media moved on Android 11+: a fresh install reads
+> `Android/media/com.whatsapp/WhatsApp/Media`, not the legacy `/sdcard/WhatsApp/`
+> path. If you restore to the old location your photos/videos/files sit there
+> but WhatsApp won't see them.
 
 CamScanner data goes back to `Android/data/com.intsig.camscanner` — note that
 on Android 11+ you may need to reinstall the app first, then copy via a file
