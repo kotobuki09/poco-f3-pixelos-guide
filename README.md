@@ -1,26 +1,36 @@
-# POCO F3 (alioth) — Clean Flash to PixelOS + Root
+# POCO F3 (alioth) — Clean Flash + Root Guide
 
-A complete, tested walkthrough for moving a POCO F3 off an abandoned custom ROM
-(or stock MIUI) onto a current PixelOS build with Magisk root — without losing
-your personal data.
+A complete, tested walkthrough for moving a POCO F3 off an abandoned custom
+ROM (or stock MIUI) onto a current ROM with root — without losing personal
+data, and with working banking apps.
 
 This is not a generic flashing guide. It was written from a real install on a
 real device and documents the things that actually go wrong: the recovery that
-won't boot, the boot image that's secretly truncated, the Magisk zip that
-TWRP can't flash, and the A/B slot confusion that makes a healthy phone look
-bricked.
+won't boot, the boot image that's secretly truncated, the A/B slot confusion
+that makes a healthy phone look bricked — and, most importantly, why **Magisk
+failed against banking apps while kernel-integrated KernelSU passed**.
 
-**Tested configuration**
+**Tested configuration (final, verified)**
 
 | Item | Value |
 |---|---|
 | Device | POCO F3, model M2012K11AG, codename `alioth`, arm64 |
 | Starting ROM | AncientOS 12.1 v6.4 (Sept 2022), bootloader already unlocked |
-| Target ROM | PixelOS 17.0 (`PixelOS_alioth-17.0-20261112-0826.zip`) |
+| ROM | crDroid 13.1, Android 17 (`crDroidAndroid-17.0-20261115-alioth-v13.1.zip`) |
+| GApps | NikGapps full arm64-17 (`NikGapps-full-arm64-17-20261021.zip`) |
 | Firmware | Global `fw_alioth_OS1.0.2.0.TKHMIXM.zip` |
-| Root | Magisk 31.1 via patched boot image |
-| Recovery used | TWRP 3.6.2 (already installed on slot A) |
-| Result | Android 17, rooted, Zygisk + Play Integrity, ~22 GB of user data restored |
+| Kernel | `4.19.325-InfiniR_Alioth_v13.1_KSU_raystef66` — **KernelSU built in** |
+| Root | KernelSU (backslashxx fork) via kernel driver — **no Magisk** |
+| Manager | `KernelSU_v3.3.1-55_32736` from `backslashxx/KernelSU` releases |
+| Recovery used | crDroid recovery / TWRP — both work |
+| Result | Android 17, rooted, **both banking apps open normally, before and after reboot** |
+
+> The PixelOS + Magisk path also works as an install (see the alternative path
+> section below), but on
+> this device **Magisk could not be hidden well enough** for a
+> Promon/RASP-protected bank app. KernelSU root lives entirely inside the
+> kernel — there is no userspace daemon, no `su` binary on disk, no socket —
+> so there is nothing for the app's shield to find.
 
 ## Contents
 
@@ -31,13 +41,14 @@ bricked.
 - [Step 2 — Download the flash files](#step-2--download-the-flash-files)
 - [Step 3 — Recovery strategy](#step-3--recovery-strategy)
 - [Step 4 — Reboot to fastboot, verify unlock](#step-4--reboot-to-fastboot-and-verify-the-unlock)
-- [Step 5 — Boot TWRP, format data](#step-5--boot-twrp-and-format-data)
+- [Step 5 — Recovery: format data](#step-5--recovery-and-format-data)
 - [Step 6 — Push files and flash](#step-6--push-files-and-flash)
-- [Step 7 — Boot, patch, root](#step-7--boot-patch-root)
-- [Step 8 — Root hardening](#step-8--root-hardening-banking-apps-play-integrity)
+- [Step 7 — Root with the built-in KernelSU](#step-7--root-with-the-built-in-kernelsu)
+- [Step 8 — Banking apps: what worked and why](#step-8--banking-apps--what-worked-and-why)
 - [Step 9 — Restore your data](#step-9--restore-your-data)
 - [Step 10 — Camera and tools](#step-10--camera-gcam-and-recommended-tools)
 - [Step 11 — Optimization](#step-11--post-install-optimization)
+- [Alternative: PixelOS + Magisk](#alternative-pixelos--magisk-flash-path)
 - [Troubleshooting](#troubleshooting--things-that-actually-happened)
 - [Pre-wipe checklist](#sanity-checklist-before-you-wipe)
 - [Warnings](#warnings)
@@ -78,8 +89,7 @@ What does not survive unless you back it up separately:
   extract to `platform-tools/` and use that `adb`/`fastboot` for everything
 - ~30 GB free disk space for the backup + files
 - Phone charged above ~50%
-- Existing TWRP on the device (see [Recovery strategy](#step-3-recovery-strategy)).
-  If you're coming from a custom ROM you probably already have it.
+- A working recovery on the device (see [Recovery strategy](#step-3--recovery-strategy)).
 
 Commands below are **bash syntax** (`for` loops, `export`, `head`). On Windows,
 run them from Git Bash or WSL. If you use PowerShell/cmd, run each `adb pull` /
@@ -148,10 +158,10 @@ Create a `flash/` folder. You need four things:
 
 | File | Where | Approx. size |
 |---|---|---|
-| PixelOS ROM zip | [pixelos.net/download/alioth](https://pixelos.net/download/alioth) — take the newest build | ~3 GB |
+| crDroid ROM zip | [crdroid.net/alioth](https://crdroid.net/alioth/13) — take the newest v13.x build | ~1.9 GB |
+| GApps | [NikGapps](https://nikgapps.com/downloads) — `NikGapps-full-arm64-17-*` | ~1.2 GB |
 | Global firmware | `fw_alioth` `OS1.0.2.0.TKHMIXM` from [XiaomiFirmwareUpdater](https://xmfirmwareupdater.com/firmware/alioth/stable/OS1.0.2.0.TKHMIXM/) or its GitHub releases mirror | ~140 MB |
-| Magisk APK | [github.com/topjohnwu/Magisk/releases](https://github.com/topjohnwu/Magisk/releases) | ~10 MB |
-| Boot image | `boot-alioth_*.img` from the PixelOS download page's recovery images (`https://download.pixelos.net/seventeen/alioth/recovery/`), or extracted from the ROM zip's `payload.bin` | **~192 MB** |
+| KernelSU manager | `KernelSU_v3.3.1-55_*-release.apk` from [backslashxx/KernelSU releases](https://github.com/backslashxx/KernelSU/releases) — **this exact fork**, see Step 7 | ~12 MB |
 
 > **Firmware is region-specific.** `TKHMIXM` (MIXM) is the **Global** branch —
 > right for a Global-model phone. If your device shipped EEA (`EUXM`) or India
@@ -159,47 +169,33 @@ Create a `flash/` folder. You need four things:
 > you can end up with broken modem/band behavior. Check your original ROM's
 > version string before wiping if unsure.
 
-`vendor_boot`/`dtbo` images are only needed if you take the official
-recovery-based route (Step 3). The TWRP route this guide follows doesn't use
-them.
+**Do not download Magisk** — you will not need it. crDroid's bundled InfiniR
+kernel has KernelSU compiled in (`CONFIG_KSU=y`); root comes from the kernel
+itself.
 
-Sanity-check the ROM zip before you wipe (a corrupt 3 GB download is a bad
-surprise mid-flash):
-
-```bash
-unzip -l PixelOS_alioth-*.zip | grep payload.bin   # should list payload.bin
-```
-
-### Verify the boot image — this is the #1 failure point
-
-Mirror sites (SourceForge in particular) have served **truncated** boot images
-for this device. A truncated image still "downloads successfully" but Magisk
-will fail with `Unable to unpack the boot image` and the PixelOS recovery may
-refuse to boot entirely.
-
-For the `20261112` build the real `boot-alioth_20261112_0826.img` is
-**201,326,592 bytes (~192 MB)**. If yours is ~23 MB, it's broken — re-download
-from `download.pixelos.net`, not a mirror.
-
-Check the Android magic bytes too:
+Sanity-check the ROM zip before you wipe:
 
 ```bash
-head -c 8 boot-alioth_*.img   # expect: ANDROID!
+unzip -l crDroidAndroid-*.zip | head    # should list payload.bin or image files
 ```
 
 ## Step 3 — Recovery strategy
 
-The official PixelOS instructions say to flash their `vendor_boot` + `boot`
-images, `fastboot reboot recovery`, then sideload from their recovery.
+crDroid ships its own recovery images (`boot`, `vendor_boot`, `dtbo`, `vbmeta`)
+next to the ROM zip on the download page. The official install path is:
 
-**On this device that recovery may never boot** — the phone sits on the POCO
-logo indefinitely (confirmed on the test unit, across both slots, even with
-`dtbo` flashed). If you already have a working TWRP, skip the official recovery
-entirely and flash from TWRP. That is the route this guide documents; it is
-also more flexible because ADB works in TWRP's main menu.
+```bash
+fastboot flash dtbo        dtbo.img
+fastboot flash vendor_boot vendor_boot.img
+fastboot flash boot        boot.img
+fastboot --set-active=a    # match your active slot (getvar current-slot)
+fastboot reboot recovery
+```
 
-If you don't have TWRP yet and PixelOS recovery won't boot, flash a known-good
-`alioth` TWRP image first:
+On the test unit, an existing TWRP 3.6.2 was used instead and worked fine —
+ADB is live in TWRP's main menu, which makes pushing files easy. If your
+official recovery sits at the POCO logo forever (confirmed on this device
+with PixelOS recovery), use a known-good `alioth` TWRP instead:
 
 ```bash
 fastboot flash recovery_a twrp-alioth.img
@@ -222,27 +218,30 @@ fastboot getvar current-slot    # note which slot is active
 - `error: no devices/emulators found` usually means Windows bound the wrong
   driver, or a USB 3.x port. Try a USB 2.0 port and check Device Manager for
   "Android Bootloader Interface".
+- `fastboot` commands hanging while `fastboot devices` lists the serial means
+  the phone's fastboot state is wedged: hold **Power ~10 s** to force-reboot,
+  then re-enter fastboot with **Power + Volume Down**.
 
 **If the phone hangs at the POCO logo at any point:** hold **Power + Volume
 Down** for 10–15 seconds. It forces a reboot straight into fastboot even when
 Power alone does nothing. This combo is your undo button — remember it.
 
-## Step 5 — Boot TWRP and format data
+## Step 5 — Recovery and format data
 
 ```bash
 fastboot reboot recovery        # or Power+VolUp at boot
 ```
 
-Boots the wrong recovery (or back to the POCO logo)? Your TWRP probably lives
-on the **other** slot — drop back to fastboot and switch:
+Boots the wrong recovery (or back to the POCO logo)? Your recovery probably
+lives on the **other** slot — drop back to fastboot and switch:
 
 ```bash
 fastboot getvar current-slot
-fastboot --set-active=a         # or b — whichever slot has TWRP
+fastboot --set-active=a         # or b — whichever slot has recovery
 fastboot reboot recovery
 ```
 
-In TWRP:
+In recovery:
 
 1. **Wipe → Format Data** → type `yes` → confirm.
    This is the point of no return — everything on internal storage is erased.
@@ -250,83 +249,136 @@ In TWRP:
 
 ## Step 6 — Push files and flash
 
-ADB is live in TWRP's main menu. Push everything:
+ADB is live in recovery's main menu. Push everything:
 
 ```bash
 adb shell mkdir -p /sdcard/flash
-adb push flash/PixelOS_alioth-*.zip      /sdcard/flash/
-adb push flash/fw_alioth_*.zip           /sdcard/flash/
-adb push flash/Magisk-v*.apk             /sdcard/flash/
-adb push flash/boot-alioth_*.img         /sdcard/flash/
+adb push flash/crDroidAndroid-*.zip  /sdcard/flash/
+adb push flash/NikGapps-*.zip        /sdcard/flash/
+adb push flash/fw_alioth_*.zip       /sdcard/flash/
 ```
 
 Then on the phone, **Install** from `/sdcard/flash/` **in this order**:
 
-1. `PixelOS_alioth-*.zip` — takes several minutes; it's a ~3 GB payload.
-   When it finishes, tap **Wipe cache/dalvik** when offered.
-2. `fw_alioth_*.zip` — the firmware.
-3. **Skip the Magisk zip** — see the warning below.
+1. `crDroidAndroid-*.zip` — the ROM.
+2. `NikGapps-*.zip` — GApps (same recovery session, before first boot).
+3. `fw_alioth_*.zip` — the firmware, if not already on it.
 
-> **Do not flash Magisk.zip in TWRP.** On this device TWRP fails with
-> `mount: can't find /system in /etc/fstab` / `Cannot mount /system` and the
-> flash errors out. It's harmless — ROM and firmware still install — but you
-> root properly in Step 7 by patching the boot image instead, which is also
-> the cleaner method.
+Then **Wipe cache/dalvik** if offered, and **Reboot → System**.
 
-Note which slot the ROM installer targeted (TWRP flashes A/B ROMs to the
-**inactive** slot — e.g., it installed to slot **B** on the test unit).
+> Do **not** flash any root zip or Magisk APK here. Root comes from the
+> kernel that ships inside crDroid's boot image — there is nothing to patch.
 
-## Step 7 — Boot, patch, root
+## Step 7 — Root with the built-in KernelSU
 
-1. TWRP → **Reboot → System**, and if it asks which slot, pick the slot the ROM
-   was installed to (e.g., **B**). Decline the TWRP-app install prompt.
-2. First boot takes a few minutes. Complete setup, enable USB debugging again
-   (Developer options: tap Build number 7×).
-3. Install Magisk:
+crDroid's bundled kernel (`InfiniR_Alioth_..._KSU`) has KernelSU compiled in.
+The kernel driver is a **backslashxx fork** — on the test unit it reports
+version `32700-6`, i.e. **uapi 6**. The manager APK must speak the same uapi,
+or the manager will show "Working" but silently skip the `install()` step
+that deploys the `ksud` binary — and nothing will ever get root.
 
-   ```bash
-   adb install flash/Magisk-v*.apk
-   ```
+| Manager | Result on this device |
+|---|---|
+| Official KernelSU `v3.3.1` (tiann) | Shows "Working", but **uapi 5** → reduced single-page UI, no bottom nav, `install()` skipped. Useless for granting root |
+| KernelSU-Next (any version) | "KernelSU Next v2 signature not found" — wrong driver family |
+| SukiSU Nova | "Not installed" — wrong driver family |
+| **backslashxx `KernelSU_v3.3.1-55`** | **"Working 🍉", uapi 6, full UI (Home / Superuser / Module / Settings)** — the correct manager |
 
-4. In the Magisk app: **Install → Select and Patch a File** → navigate to
-   `Internal storage/flash/` and choose `boot-alioth_*.img` (that's where you
-   pushed it in Step 6). It writes `magisk_patched-*.img` to `Download/`.
-5. Pull it and flash it to the **slot the system is running on**:
+Steps:
+
+1. Install the manager:
 
    ```bash
-   adb pull /sdcard/Download/magisk_patched-*.img flash/
-   adb reboot bootloader
-   fastboot getvar current-slot            # confirm: b on the test unit
-   fastboot flash boot_b flash/magisk_patched-*.img   # or boot_a — match the slot!
-   fastboot reboot
+   adb install flash/KernelSU_v3.3.1-55_*.apk
    ```
 
-   Flashing the wrong slot is the classic way to end up staring at a POCO logo.
-6. Verify root:
+2. Open the **KernelSU** app once. It should show **"Working"** with the
+   kernel version string and a bottom bar with **Home | Superuser | Module |
+   Settings**. If you only see one page with no bottom bar, you have the
+   wrong manager — go back to step 1.
+
+3. Grant root to apps you trust. There is **no popup dialog** like Magisk —
+   grants are made in advance: **Superuser** tab → find the app → toggle
+   **Superuser** on its App Profile page.
+
+4. For root over adb, grant **Shell** (`com.android.shell`, UID 2000):
+   Superuser tab → search `shell` → tap Shell → turn on **Superuser**.
+
+5. Verify:
 
    ```bash
-   adb shell su -c id        # expect: uid=0(root) ... context=u:r:magisk:s0
-   adb shell su -c magisk -v # e.g. 31.1:MAGISK:R
+   adb shell /system/bin/su -c id
+   # expect: uid=0(root) gid=0(root) context=u:r:ksu:s0
    ```
 
-   Open the Magisk app once first if `su` isn't responding — the daemon needs
-   its first run, and a superuser dialog may need approval.
+### How the `su` command works here — read this before looking for a binary
 
-## Step 8 — Root hardening (banking apps, Play Integrity)
+`/system/bin/su` **does not exist as a file** on this setup. The kernel hooks
+the `execve` syscall for that exact path and, if the calling UID is on the
+KernelSU allowlist, substitutes execution of `/data/adb/ksud`, which spawns
+your root shell. Consequences:
 
-In the Magisk app:
+- `which su` / `ls /system/bin/su` will say *not found* — that is normal.
+- Copying a shell to `/data/local/tmp/su` and running it does **nothing** —
+  only the literal path `/system/bin/su` is intercepted.
+- Because there is no file, no daemon, and no socket, package-scan and
+  filesystem-scan root detection find nothing. That is the point.
 
-1. Settings → enable **Zygisk**
-2. Settings → enable **Enforce DenyList**, then **Configure DenyList** and tick
-   Google Wallet, Google Play services, and your banking apps as you reinstall
-   them.
-3. Install [PlayIntegrityFork](https://github.com/osm0sis/PlayIntegrityFork/releases)
-   as a Magisk module (push the zip, or Magisk → Modules → Install from storage).
-4. Reboot, then check integrity with the Play Integrity API checker or just try
-   your banking apps.
+`adb root` also does not work (user build) and is unrelated — don't rely on it.
 
-No guarantee on banking apps — this improves your odds; results vary per app
-and per ROM build.
+### Root persistence
+
+The allowlist lives in `/data/adb/ksu/` and root survives reboots — verified
+on the test unit (`uid=0` immediately after reboot, no manager interaction
+needed). If you ever wipe `/data` or reflash the ROM clean, reinstall the
+manager and re-grant; `/data/adb/ksud` is redeployed when the manager's
+`install()` runs.
+
+## Step 8 — Banking apps: what worked and why
+
+This was the hard part of the whole project, and the reason this guide
+recommends kernel-integrated KernelSU over Magisk.
+
+**Failed approach (Magisk):** Magisk 31.1 + Zygisk + DenyList + Zygisk
+Assistant hid mounts, maps, and environment variables well enough for *some*
+apps — but a Promon-style protected bank app still detected it. Traces that
+leak with Magisk even when hiding is configured:
+
+- `magiskd` abstract socket visible in `/proc/net/unix`
+- `/debug_ramdisk/.magisk` mount points
+- `ro.dalvik.vm.native.bridge=libzygisk.so` readable by any app
+- `magisk`/`magisk_file` strings inside the world-readable SELinux policy
+- `magisk.db`, patched-boot artifacts, module mounts
+- The Magisk manager package itself (uninstalling it helps, but the daemon
+  traces remain)
+
+Each of these was individually confirmed readable by an unprivileged app on
+the test device. After eliminating every measurable trace, the hardened app
+still flagged root — the shield likely probes deeper runtime/kernel state.
+
+**Working approach (KernelSU in-kernel):** the stock crDroid boot image with
+the built-in KernelSU driver. No Magisk, no Zygisk, no DenyList, no hiding
+modules. Both banking apps — including the one that defeated Magisk — open
+normally, and still do after a reboot. The kernel grants root internally;
+from an app's perspective the device looks like an ordinary unlocked-but-
+unrooted phone.
+
+**Rules to keep it working:**
+
+- **Do not install Magisk.** Ever. It reintroduces every trace above.
+- KSU modules are supported (Module tab, Magisk-format module zips), but
+  avoid Zygisk-dependent modules — there is no Zygisk in this setup and none
+  is needed for the banks to work.
+- Grant root sparingly — the default app profile gives full root.
+- The `me.weishu.kernelsu` manager package is itself detectable by name; in
+  practice the tested bank apps still pass with it installed. If a future app
+  gets stricter, you can uninstall the manager — the allowlist and root keep
+  working, you just can't change grants until you reinstall it.
+
+If you ever need to go back to fully unrooted: flash the unmodified
+`boot_a`/`boot_b` image for your crDroid build — the KernelSU driver then has
+no allowlist entries and nothing to grant (though the driver itself remains
+compiled into the kernel).
 
 ## Step 9 — Restore your data
 
@@ -370,7 +422,8 @@ for `alioth` is an LMC8.4 GCam build with a POCO F3 config:
    **double-tap the empty area next to the shutter button** → choose the XML.
    (There is no "Load config" menu item.)
 
-Recommended tools (all verified working on this setup):
+Recommended tools (all verified working on this setup; grant each one in the
+KernelSU Superuser tab as needed):
 
 | App | Purpose | Source |
 |---|---|---|
@@ -379,7 +432,7 @@ Recommended tools (all verified working on this setup):
 | AFWall+ | Per-app firewall | F-Droid |
 | SmartPack KM | Kernel settings viewer/tweaker | GitHub |
 | Shizuku | ADB-level API bridge for tools | GitHub |
-| Termux | Terminal | F-Droid |
+| Termux | Terminal (`/system/bin/su` gives root inside it) | F-Droid |
 | F-Droid | FOSS app store | f-droid.org |
 | Aurora Store | Play Store apps anonymously | F-Droid (`com.aurora.store`) |
 | SD Maid SE | Storage cleaner | F-Droid / GitHub |
@@ -396,7 +449,7 @@ Mobilism app or XDA.
 adb shell pm bg-dexopt-job
 
 # TRIM the flash storage
-adb shell su -c fstrim -v /data
+adb shell /system/bin/su -c 'fstrim -v /data'
 
 # Snappier UI — halve animation durations
 adb shell settings put global window_animation_scale 0.5
@@ -413,19 +466,53 @@ kernel. Don't force it.
 
 ---
 
+## Alternative: PixelOS + Magisk flash path
+
+Kept for reference — this was the first tested path. It works fine as a ROM
+install; the only problem is banking-app compatibility (see Step 8).
+
+Files used: `PixelOS_alioth-17.0-20261112-0826.zip` (~3 GB), firmware as
+above, `Magisk-v31.1.apk`, and the **~192 MB** `boot-alioth_*.img` from the
+PixelOS recovery-images page (`download.pixelos.net/seventeen/alioth/recovery/`).
+
+> **Verify the boot image size before flashing.** Mirror sites (SourceForge in
+> particular) have served **truncated** boot images for this device — ~23 MB
+> instead of ~192 MB. Magisk then fails with `Unable to unpack the boot image`
+> and the recovery may refuse to boot. The real `boot-alioth_20261112_0826.img`
+> is **201,326,592 bytes**. Check `head -c 8 boot-*.img` → `ANDROID!`.
+
+- Recovery: the official PixelOS recovery sat at the POCO logo forever on the
+  test unit (both slots, even with `dtbo` flashed). Use TWRP instead.
+- Do **not** flash `Magisk.zip` in TWRP — it errors with
+  `Cannot mount /system` on this A/B device. Instead: boot the ROM, install
+  the Magisk APK, **Install → Select and Patch a File** on the stock
+  `boot-alioth_*.img`, then `fastboot flash boot_<active slot>` the
+  `magisk_patched-*.img` from `Download/`.
+- Root check after boot: `adb shell su -c id` → `uid=0` once you've approved
+  the prompt in the Magisk app.
+- TWRP flashes A/B ROMs to the **inactive** slot — reboot into that slot, and
+  flash the patched boot image to the slot the system is actually running on.
+
 ## Troubleshooting — things that actually happened
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `adb devices` → `offline` | Pending USB-debugging auth | Unlock phone, accept dialog, replug cable |
 | `fastboot` sees nothing, phone at POCO logo | Hung boot | Hold **Power+VolDown** 10–15 s → fastboot |
-| PixelOS recovery never boots (POCO logo forever) | Recovery image incompatible with old firmware | Use existing TWRP (other slot), or flash TWRP |
+| `fastboot devices` lists serial but commands hang | Wedged fastboot state | Replug cable / new port, hold Power 10 s, re-enter fastboot |
 | `Fetching super ... FAILED ... 'unknown command'` | Harmless fastbootd quirk | Ignore — check the actual `Writing ... OKAY` lines |
 | TWRP: `Cannot mount /system`, zip error 1 | TWRP can't flash Magisk on A/B | Patch boot.img in the Magisk app instead |
 | Magisk: `Unable to unpack the boot image` | Truncated boot.img (~23 MB vs 192 MB) | Re-download from the official PixelOS host |
-| Phone boots to logo after flash | Magisk/flashing hit wrong slot | `fastboot getvar current-slot`, flash the matching `boot_a`/`boot_b` |
+| Phone boots to logo after flash | Wrong slot | `fastboot getvar current-slot`, flash matching `boot_a`/`boot_b` |
 | Git Bash: `failed to stat remote object 'C:/Program Files/Git/sdcard'` | MSYS path mangling | `export MSYS_NO_PATHCONV=1` |
-| `su` → Permission denied | Magisk daemon not initialized / unapproved | Open Magisk app once, approve the dialog, retry |
+| KSU manager shows "Working" but no bottom nav / can't grant | Manager uapi older than driver | Use **backslashxx KernelSU v3.3.1-55** (uapi 6), not tiann v3.3.1 (uapi 5) |
+| KSU-Next: "v2 signature not found" | Driver isn't KernelSU-Next | Use the backslashxx manager |
+| SukiSU Nova: "Not installed" | Driver isn't SukiSU | Use the backslashxx manager |
+| `su` → file not found | `su` isn't a file on this setup | Run `/system/bin/su` literally — the kernel intercepts the path |
+| `su` runs but still `uid=2000` | Shell not allowlisted | KernelSU app → Superuser → Shell → toggle on |
+| `adb root` refused | User build; unrelated to KernelSU | Grant Shell in the manager, use `/system/bin/su` |
+| Bank app screenshot is black | `FLAG_SECURE`, not a crash | Judge by the physical screen, not `screencap` |
+| Hardened bank app still detects Magisk | Userspace traces (sockets, props, mounts) | KernelSU path — see Step 8 |
 | No "load config" in LMC8.4 | It's a hidden gesture | Double-tap next to the shutter button |
 
 ## Sanity checklist before you wipe
@@ -435,7 +522,7 @@ kernel. Don't force it.
 - [ ] Swift Backup run + pulled (if you want app data)
 - [ ] 2FA/authenticator migrated or codes saved — these do **not** come back
 - [ ] WhatsApp Google Drive backup current (if chats matter)
-- [ ] All four flash files downloaded, boot.img size verified (~192 MB)
+- [ ] All flash files downloaded (ROM, GApps, firmware, KernelSU manager)
 - [ ] Battery above ~50%
 - [ ] You know the Power+VolDown forced-fastboot combo
 
@@ -446,9 +533,12 @@ kernel. Don't force it.
   built for `alioth` belong anywhere near this phone.
 - Flashing the wrong slot or an image for a different device is the main way
   people brick these phones. When in doubt, `fastboot getvar` everything.
+- KernelSU grants are silent and total — only allowlist apps you trust.
 - Keep your PC-side backup until you've lived on the new ROM for a week or two.
 - Third-party APK sources carry real risk. Prefer F-Droid, official GitHub
   releases, and the ROM's own site over random mirrors.
+- Root-hiding is a moving target. The configuration here is what was verified
+  on this device on this date — a bank-app update or ROM update can change it.
 
 ## License
 
